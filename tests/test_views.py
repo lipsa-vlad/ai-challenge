@@ -2,9 +2,11 @@
 Unit tests for Django views
 """
 import json
+import unittest
 from django.test import TestCase, Client
 from django.urls import reverse
-from memory_game.consumers import GameConsumer
+from unittest.mock import patch, MagicMock
+import redis
 
 
 class TestViews(TestCase):
@@ -12,8 +14,11 @@ class TestViews(TestCase):
     
     def setUp(self):
         self.client = Client()
-        # Clear any existing games
-        GameConsumer.games.clear()
+        # Mock Redis to clear any existing games
+        with patch('redis.Redis') as mock_redis:
+            mock_instance = MagicMock()
+            mock_redis.return_value = mock_instance
+            mock_instance.keys.return_value = []
     
     def test_lobby_view(self):
         """Test lobby page loads successfully"""
@@ -51,20 +56,31 @@ class TestViews(TestCase):
         self.assertContains(response, 'start-btn')
         self.assertContains(response, 'game-board')
     
-    def test_list_rooms_api_empty(self):
+    @patch('memory_game.views.redis.Redis')
+    def test_list_rooms_api_empty(self, mock_redis_class):
         """Test list rooms API returns empty list when no rooms"""
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        mock_redis.keys.return_value = []
+        
         response = self.client.get('/api/rooms')
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertIn('rooms', data)
         self.assertEqual(len(data['rooms']), 0)
     
-    def test_list_rooms_api_with_active_rooms(self):
+    @patch('memory_game.views.redis.Redis')
+    def test_list_rooms_api_with_active_rooms(self, mock_redis_class):
         """Test list rooms API with active games"""
-        # Simulate active games
-        GameConsumer.games['room1'] = {
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        
+        # Mock Redis data
+        mock_redis.keys.return_value = ['game:room1', 'game:room2']
+        
+        room1_data = json.dumps({
             'players': {
-                'player1': {'name': 'Player 1', 'score': 0, 'connected': True}
+                'player1': {'name': 'Player 1', 'score': 0}
             },
             'cards': [],
             'flipped': [],
@@ -72,11 +88,11 @@ class TestViews(TestCase):
             'current_player': 'player1',
             'theme': 'emoji',
             'started': False
-        }
-        GameConsumer.games['room2'] = {
+        })
+        room2_data = json.dumps({
             'players': {
-                'player1': {'name': 'Player 1', 'score': 2, 'connected': True},
-                'player2': {'name': 'Player 2', 'score': 1, 'connected': True}
+                'player1': {'name': 'Player 1', 'score': 2},
+                'player2': {'name': 'Player 2', 'score': 1}
             },
             'cards': ['🎮'] * 16,
             'flipped': [],
@@ -84,7 +100,9 @@ class TestViews(TestCase):
             'current_player': 'player1',
             'theme': 'starwars',
             'started': True
-        }
+        })
+        
+        mock_redis.get.side_effect = lambda key: room1_data if key == 'game:room1' else room2_data
         
         response = self.client.get('/api/rooms')
         self.assertEqual(response.status_code, 200)
@@ -164,19 +182,29 @@ class TestViews(TestCase):
         response = self.client.get('/invalid/url/')
         self.assertEqual(response.status_code, 404)
     
-    def test_multiple_concurrent_rooms(self):
+    @patch('memory_game.views.redis.Redis')
+    def test_multiple_concurrent_rooms(self, mock_redis_class):
         """Test handling multiple game rooms simultaneously"""
-        # Create 5 different rooms
-        for i in range(5):
-            GameConsumer.games[f'room{i}'] = {
-                'players': {f'player{j}': {'name': f'Player {j}', 'score': 0, 'connected': True} for j in range(i+1)},
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        
+        # Create 5 different rooms in Redis
+        room_keys = [f'game:room{i}' for i in range(5)]
+        mock_redis.keys.return_value = room_keys
+        
+        def get_room_data(key):
+            room_num = int(key.split('room')[1])
+            return json.dumps({
+                'players': {f'player{j}': {'name': f'Player {j}', 'score': 0} for j in range(room_num+1)},
                 'cards': [],
                 'flipped': [],
                 'matched': [],
                 'current_player': 'player0',
-                'theme': ['emoji', 'starwars', 'pokemon'][i % 3],
-                'started': i % 2 == 0
-            }
+                'theme': ['emoji', 'starwars', 'pokemon'][room_num % 3],
+                'started': room_num % 2 == 0
+            })
+        
+        mock_redis.get.side_effect = get_room_data
         
         response = self.client.get('/api/rooms')
         data = json.loads(response.content)
