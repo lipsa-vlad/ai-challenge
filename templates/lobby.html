@@ -20,6 +20,13 @@
             <p class="help-text">Enter a room name to create a new game or join an existing one</p>
         </div>
         
+        <div class="active-rooms-section" id="active-rooms-section">
+            <h2>Active Rooms <button id="refresh-btn" class="refresh-btn">🔄 Refresh</button></h2>
+            <div id="rooms-list" class="rooms-list">
+                <p class="loading">Loading rooms...</p>
+            </div>
+        </div>
+        
         <div class="features">
             <div class="feature">
                 <span class="icon">👥</span>
@@ -40,19 +47,73 @@
     </div>
     
     <script>
-        document.getElementById('join-btn').addEventListener('click', joinGame);
+        document.getElementById('join-btn').addEventListener('click', () => joinGame());
         document.getElementById('room-name').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') joinGame();
         });
+        document.getElementById('refresh-btn').addEventListener('click', loadRooms);
         
-        function joinGame() {
-            const roomName = document.getElementById('room-name').value.trim();
-            if (roomName) {
+        function joinGame(roomName) {
+            // If roomName is an event object or undefined, get from input field
+            if (typeof roomName !== 'string' || !roomName) {
+                roomName = document.getElementById('room-name').value.trim();
+            }
+            if (roomName && typeof roomName === 'string') {
                 window.location.href = `game/${roomName}/`;
             } else {
                 alert('Please enter a room name');
             }
         }
+        
+        async function loadRooms() {
+            const roomsList = document.getElementById('rooms-list');
+            roomsList.innerHTML = '<p class="loading">Loading rooms...</p>';
+            
+            try {
+                const response = await fetch('api/rooms');
+                const data = await response.json();
+                
+                if (data.rooms.length === 0) {
+                    roomsList.innerHTML = '<p class="no-rooms">No active rooms. Create one above!</p>';
+                    return;
+                }
+                
+                roomsList.innerHTML = data.rooms.map(room => `
+                    <div class="room-card ${room.started ? 'in-progress' : 'waiting'}">
+                        <div class="room-header">
+                            <h3>${room.name}</h3>
+                            <span class="room-status ${room.started ? 'status-playing' : 'status-waiting'}">
+                                ${room.started ? '🎮 Playing' : '⏳ Waiting'}
+                            </span>
+                        </div>
+                        <div class="room-info">
+                            <span class="room-players">👥 ${room.players} ${room.players === 1 ? 'player' : 'players'}</span>
+                            <span class="room-theme">🎨 ${room.theme}</span>
+                        </div>
+                        <button class="join-room-btn primary-btn" data-room-name="${room.name}">
+                            ${room.started ? 'Spectate' : 'Join Room'}
+                        </button>
+                    </div>
+                `).join('');
+                
+                // Add event listeners to join buttons
+                document.querySelectorAll('.join-room-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const roomName = this.getAttribute('data-room-name');
+                        joinGame(roomName);
+                    });
+                });
+            } catch (error) {
+                console.error('Error loading rooms:', error);
+                roomsList.innerHTML = '<p class="error">Error loading rooms. Please try again.</p>';
+            }
+        }
+        
+        // Load rooms on page load
+        loadRooms();
+        
+        // Auto-refresh every 5 seconds
+        setInterval(loadRooms, 5000);
     </script>
 </body>
 </html>

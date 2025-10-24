@@ -31,14 +31,23 @@ class GameConsumer(AsyncWebsocketConsumer):
             }
         
         game = self.games[self.room_name]
+        
+        # Clean up disconnected players before adding new one
+        disconnected_players = [pid for pid, p in game['players'].items() if not p['connected']]
+        for pid in disconnected_players:
+            del game['players'][pid]
+            print(f"Removed disconnected player: {pid}")
+        
+        # Reassign player numbers after cleanup
         player_id = self.channel_name
+        player_number = len(game['players']) + 1
         game['players'][player_id] = {
-            'name': f'Player {len(game["players"]) + 1}',
+            'name': f'Player {player_number}',
             'score': 0,
             'connected': True
         }
         
-        if game['current_player'] is None:
+        if game['current_player'] is None or game['current_player'] not in game['players']:
             game['current_player'] = player_id
         
         await self.channel_layer.group_send(
@@ -53,16 +62,29 @@ class GameConsumer(AsyncWebsocketConsumer):
         if self.room_name in self.games:
             game = self.games[self.room_name]
             if self.channel_name in game['players']:
-                game['players'][self.channel_name]['connected'] = False
+                # Remove player immediately instead of marking as disconnected
+                del game['players'][self.channel_name]
+                print(f"Player {self.channel_name} removed from room {self.room_name}")
                 
-                for player_id in game['players'].keys():
-                    await self.channel_layer.send(
-                        player_id,
-                        {
-                            'type': 'game_update',
-                            'game': self.serialize_game(game, player_id)
-                        }
-                    )
+                # Update current player if needed
+                if game['current_player'] == self.channel_name:
+                    connected_players = [p for p in game['players'].keys() if game['players'][p]['connected']]
+                    game['current_player'] = connected_players[0] if connected_players else None
+                
+                # If no players left, clean up the game
+                if len(game['players']) == 0:
+                    del self.games[self.room_name]
+                    print(f"Room {self.room_name} cleaned up (no players)")
+                else:
+                    # Notify remaining players
+                    for player_id in game['players'].keys():
+                        await self.channel_layer.send(
+                            player_id,
+                            {
+                                'type': 'game_update',
+                                'game': self.serialize_game(game, player_id)
+                            }
+                        )
         
         await self.channel_layer.group_discard(
             self.room_group_name,
