@@ -2,7 +2,10 @@ import random
 import requests
 
 THEMES = {
-    'emoji': ['🎮', '🎯', '🎨', '🎭', '🎪', '🎸', '🎺', '🎼'],
+    'emoji': ['💩', '🤡', '🦄', '🍕', '🦖', '🧙', '👽', '🤖'],
+    'animals': ['🦙', '🦥', '🦦', '🦨', '🦡', '🦘', '🦒', '🦔'],
+    'food': ['🌮', '🍔', '🍟', '🍕', '🌭', '🧇', '🥓', '🍩'],
+    'faces': ['🤪', '🥴', '😵', '🤯', '🥳', '🤠', '🤑', '😎'],
     'starwars': [],
     'pokemon': []
 }
@@ -42,6 +45,8 @@ def get_cards(theme):
         if not THEMES['pokemon']:
             THEMES['pokemon'] = fetch_pokemon()
         items = THEMES['pokemon']
+    elif theme in THEMES:
+        items = THEMES[theme]
     else:
         items = THEMES['emoji']
     

@@ -22,7 +22,10 @@
         <div class="theme-selector">
             <label>Theme: </label>
             <select id="theme-select">
-                <option value="emoji">🎨 Emoji</option>
+                <option value="emoji">😂 Funny Emoji</option>
+                <option value="animals">🦙 Weird Animals</option>
+                <option value="food">🍕 Junk Food</option>
+                <option value="faces">🤪 Crazy Faces</option>
                 <option value="starwars">⭐ Star Wars</option>
                 <option value="pokemon">⚡ Pokemon</option>
             </select>
@@ -160,10 +163,16 @@
                     card.className = 'card';
                     card.dataset.index = index;
                     
-                    const displayContent = gameState.theme === 'emoji' ? item : `<div class="text-card">${item}</div>`;
+                    // Show emojis directly, text themes in styled cards
+                    const isEmojiTheme = ['emoji', 'animals', 'food', 'faces'].includes(gameState.theme);
+                    const displayContent = isEmojiTheme ? item : `<div class="text-card">${item}</div>`;
+                    
+                    // Random funny back icons
+                    const backIcons = ['🤔', '🧐', '😏', '🤨', '🤫'];
+                    const randomBack = backIcons[Math.floor(Math.random() * backIcons.length)];
                     
                     card.innerHTML = `
-                        <span class="back">❓</span>
+                        <span class="back">${randomBack}</span>
                         <span class="front">${displayContent}</span>
                     `;
                     card.addEventListener('click', () => flipCard(index), { passive: true });
