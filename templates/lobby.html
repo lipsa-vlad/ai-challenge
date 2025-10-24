@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Game - Lobby</title>
+    <base href="{{ base_path }}">
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Multiplayer Memory Game</h1>
+        
+        <div class="lobby-section">
+            <h2>Create or Join a Game</h2>
+            <div class="room-input">
+                <input type="text" id="room-name" placeholder="Enter room name..." maxlength="20">
+                <button id="join-btn" class="primary-btn">Join Game</button>
+            </div>
+            <p class="help-text">Enter a room name to create a new game or join an existing one</p>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <span class="icon">👥</span>
+                <h3>Multiplayer</h3>
+                <p>Play with friends in real-time</p>
+            </div>
+            <div class="feature">
+                <span class="icon">🎨</span>
+                <h3>3 Themes</h3>
+                <p>Emoji, Star Wars, and Pokemon</p>
+            </div>
+            <div class="feature">
+                <span class="icon">🏆</span>
+                <h3>Compete</h3>
+                <p>Score points for each match</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('join-btn').addEventListener('click', joinGame);
+        document.getElementById('room-name').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') joinGame();
+        });
+        
+        function joinGame() {
+            const roomName = document.getElementById('room-name').value.trim();
+            if (roomName) {
+                window.location.href = `game/${roomName}/`;
+            } else {
+                alert('Please enter a room name');
+            }
+        }
+    </script>
+</body>
+</html>

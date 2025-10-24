@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Game - Room {{ room_name }}</title>
+    <base href="{{ base_path }}">
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="game-header">
+            <h1>🧠 Memory Game</h1>
+            <div class="room-info">Room: <strong>{{ room_name }}</strong></div>
+        </div>
+        
+        <div class="players-section" id="players-section">
+            <h3>Players</h3>
+            <div id="players-list"></div>
+        </div>
+        
+        <div class="theme-selector">
+            <label>Theme: </label>
+            <select id="theme-select">
+                <option value="emoji">🎨 Emoji</option>
+                <option value="starwars">⭐ Star Wars</option>
+                <option value="pokemon">⚡ Pokemon</option>
+            </select>
+            <button id="start-btn" class="primary-btn">Start Game</button>
+        </div>
+        
+        <div class="turn-indicator" id="turn-indicator"></div>
+        
+        <div class="game-board" id="game-board"></div>
+        
+        <div id="win-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>🎉 Game Over! 🎉</h2>
+                <div id="final-scores"></div>
+                <button id="play-again-btn" class="primary-btn">Play Again</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const roomName = "{{ room_name }}";
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        // Build WebSocket URL relative to current path
+        const currentPath = window.location.pathname;
+        const basePath = currentPath.substring(0, currentPath.indexOf('/game/'));
+        const wsUrl = `${protocol}//${window.location.host}${basePath}/ws/game/${roomName}/`;
+        console.log('Connecting to:', wsUrl);
+        const socket = new WebSocket(wsUrl);
+        
+        let gameState = null;
+        let canFlip = true;
+        
+        socket.onopen = () => {
+            console.log('Connected to game room');
+            document.getElementById('turn-indicator').textContent = '✅ Connected to game room';
+            document.getElementById('turn-indicator').className = 'turn-indicator';
+        };
+        
+        socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            document.getElementById('turn-indicator').textContent = '❌ Connection error - please refresh';
+            document.getElementById('turn-indicator').className = 'turn-indicator';
+        };
+        
+        socket.onclose = () => {
+            console.log('Disconnected from game room');
+            document.getElementById('turn-indicator').textContent = '⚠️ Disconnected - please refresh';
+            document.getElementById('turn-indicator').className = 'turn-indicator';
+        };
+        
+        socket.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            console.log('Received:', data);
+            
+            if (data.type === 'game_update') {
+                gameState = data.game;
+                console.log('Game state:', gameState);
+                updateUI();
+            } else if (data.type === 'match_found') {
+                setTimeout(() => {
+                    data.indices.forEach(idx => {
+                        const card = document.querySelector(`[data-index="${idx}"]`);
+                        if (card) card.classList.add('matched');
+                    });
+                }, 500);
+            } else if (data.type === 'no_match') {
+                canFlip = false;
+                setTimeout(() => {
+                    data.indices.forEach(idx => {
+                        const card = document.querySelector(`[data-index="${idx}"]`);
+                        if (card) card.classList.remove('flipped');
+                    });
+                    canFlip = true;
+                }, 1500);
+            }
+        };
+        
+        function updateUI() {
+            if (!gameState) return;
+            
+            // Update players
+            const playersList = document.getElementById('players-list');
+            playersList.innerHTML = gameState.players.map(p => `
+                <div class="player ${p.is_current ? 'current-turn' : ''} ${p.is_you ? 'you' : ''}">
+                    <span class="player-name">${p.name}${p.is_you ? ' (You)' : ''}</span>
+                    <span class="player-score">${p.score} ${p.score === 1 ? 'match' : 'matches'}</span>
+                </div>
+            `).join('');
+            
+            // Update turn indicator
+            const turnIndicator = document.getElementById('turn-indicator');
+            if (gameState.started) {
+                if (gameState.is_your_turn) {
+                    turnIndicator.textContent = "🎯 Your turn!";
+                    turnIndicator.className = 'turn-indicator your-turn';
+                } else {
+                    turnIndicator.textContent = `Waiting for ${gameState.current_player}...`;
+                    turnIndicator.className = 'turn-indicator';
+                }
+            } else {
+                turnIndicator.textContent = '';
+            }
+            
+            // Update board
+            if (gameState.started && gameState.cards.length > 0) {
+                renderBoard();
+                document.getElementById('start-btn').disabled = true;
+            }
+            
+            // Check win condition
+            if (gameState.matched.length === 16) {
+                setTimeout(showWinModal, 500);
+            }
+        }
+        
+        function renderBoard() {
+            const board = document.getElementById('game-board');
+            
+            // Only create cards once
+            if (board.children.length === 0) {
+                gameState.cards.forEach((item, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.dataset.index = index;
+                    
+                    const displayContent = gameState.theme === 'emoji' ? item : `<div class="text-card">${item}</div>`;
+                    
+                    card.innerHTML = `
+                        <span class="back">❓</span>
+                        <span class="front">${displayContent}</span>
+                    `;
+                    card.addEventListener('click', () => flipCard(index));
+                    board.appendChild(card);
+                });
+            }
+            
+            // Update card states
+            gameState.cards.forEach((item, index) => {
+                const card = document.querySelector(`[data-index="${index}"]`);
+                if (!card) return;
+                
+                // Update classes based on game state
+                card.className = 'card';
+                if (gameState.matched.includes(index)) {
+                    card.classList.add('matched');
+                }
+                if (gameState.flipped.includes(index)) {
+                    card.classList.add('flipped');
+                }
+            });
+        }
+        
+        function flipCard(index) {
+            if (!canFlip || !gameState.is_your_turn || !gameState.started) return;
+            
+            const card = document.querySelector(`[data-index="${index}"]`);
+            if (card.classList.contains('flipped') || card.classList.contains('matched')) return;
+            
+            card.classList.add('flipped');
+            socket.send(JSON.stringify({
+                action: 'flip_card',
+                index: index
+            }));
+        }
+        
+        function showWinModal() {
+            const modal = document.getElementById('win-modal');
+            const scoresDiv = document.getElementById('final-scores');
+            
+            const sortedPlayers = [...gameState.players].sort((a, b) => b.score - a.score);
+            scoresDiv.innerHTML = '<h3>Final Scores:</h3>' + sortedPlayers.map((p, i) => `
+                <div class="final-score">
+                    ${i === 0 ? '🏆' : ''} ${p.name}: ${p.score} ${p.score === 1 ? 'match' : 'matches'}
+                </div>
+            `).join('');
+            
+            modal.classList.remove('hidden');
+        }
+        
+        document.getElementById('start-btn').addEventListener('click', () => {
+            const theme = document.getElementById('theme-select').value;
+            console.log('Starting game with theme:', theme);
+            socket.send(JSON.stringify({
+                action: 'start_game',
+                theme: theme
+            }));
+        });
+        
+        document.getElementById('play-again-btn').addEventListener('click', () => {
+            document.getElementById('win-modal').classList.add('hidden');
+            document.getElementById('game-board').innerHTML = '';
+            document.getElementById('start-btn').disabled = false;
+        });
+    </script>
+</body>
+</html>
