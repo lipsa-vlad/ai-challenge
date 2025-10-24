@@ -90,16 +90,21 @@
             } else if (data.type === 'match_found') {
                 setTimeout(() => {
                     data.indices.forEach(idx => {
-                        const card = document.querySelector(`[data-index="${idx}"]`);
-                        if (card) card.classList.add('matched');
+                        const card = document.getElementById('game-board').children[idx];
+                        if (card) {
+                            card.classList.add('matched');
+                            card.classList.add('flipped');
+                        }
                     });
                 }, 500);
             } else if (data.type === 'no_match') {
                 canFlip = false;
                 setTimeout(() => {
                     data.indices.forEach(idx => {
-                        const card = document.querySelector(`[data-index="${idx}"]`);
-                        if (card) card.classList.remove('flipped');
+                        const card = document.getElementById('game-board').children[idx];
+                        if (card && !card.classList.contains('matched')) {
+                            card.classList.remove('flipped');
+                        }
                     });
                     canFlip = true;
                 }, 800);
@@ -180,12 +185,15 @@
                 const hasMatched = card.classList.contains('matched');
                 const hasFlipped = card.classList.contains('flipped');
                 
-                // Only update DOM if state changed
-                if (isMatched !== hasMatched) {
-                    card.classList.toggle('matched', isMatched);
+                // Add matched state
+                if (isMatched && !hasMatched) {
+                    card.classList.add('matched');
                 }
-                if (isFlipped !== hasFlipped && !isMatched) {
-                    card.classList.toggle('flipped', isFlipped);
+                
+                // Add flipped state (but don't remove it prematurely)
+                // Only add if server says flipped and card isn't already flipped
+                if (isFlipped && !hasFlipped && !isMatched) {
+                    card.classList.add('flipped');
                 }
             });
         }
