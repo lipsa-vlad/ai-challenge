@@ -127,7 +127,7 @@
                         }
                     });
                     canFlip = true;
-                }, 2100);
+                }, 2000);
             }
         };
         
@@ -208,22 +208,20 @@
                 
                 const isMatched = matchedSet.has(index);
                 const isFlipped = flippedSet.has(index);
-                const hasMatched = card.classList.contains('matched');
-                const hasFlipped = card.classList.contains('flipped');
                 
-                // Add matched state - this is permanent
-                if (isMatched && !hasMatched) {
+                // Matched cards stay flipped permanently
+                if (isMatched) {
                     card.classList.add('matched');
                     card.classList.add('flipped');
                 }
-                
-                // Add flipped state if server says so and not already flipped
-                if (isFlipped && !hasFlipped && !isMatched) {
+                // Currently flipped cards (but not matched yet)
+                else if (isFlipped) {
                     card.classList.add('flipped');
                 }
-                
-                // NEVER remove flipped class if card is matched or currently in flipped array
-                // Only let no_match handler remove flipped class for non-matches
+                // Cards that are not in any special state - only remove flipped if not matched
+                else if (!card.classList.contains('matched')) {
+                    // Don't remove here - let no_match handler control the timing
+                }
             });
         }
         
