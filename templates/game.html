@@ -26,7 +26,6 @@
                 <option value="animals">🦙 Weird Animals</option>
                 <option value="food">🍕 Junk Food</option>
                 <option value="faces">🤪 Crazy Faces</option>
-                <option value="chuck">💪 Chuck Norris Jokes</option>
                 <option value="starwars">⭐ Star Wars</option>
                 <option value="pokemon">⚡ Pokemon</option>
             </select>
@@ -111,7 +110,7 @@
                         }
                     });
                     canFlip = true;
-                }, 800);
+                }, 1600);
             }
         };
         
@@ -166,7 +165,7 @@
                     
                     // Show emojis directly, text themes in styled cards
                     const isEmojiTheme = ['emoji', 'animals', 'food', 'faces'].includes(gameState.theme);
-                    const displayContent = isEmojiTheme ? item : `<div class="text-card ${gameState.theme === 'chuck' ? 'chuck-joke' : ''}">${item}</div>`;
+                    const displayContent = isEmojiTheme ? item : `<div class="text-card">${item}</div>`;
                     
                     // Random funny back icons
                     const backIcons = ['🤔', '🧐', '😏', '🤨', '🤫'];
@@ -195,13 +194,16 @@
                 const hasMatched = card.classList.contains('matched');
                 const hasFlipped = card.classList.contains('flipped');
                 
-                // Add matched state
+                // Add matched state - this is permanent
                 if (isMatched && !hasMatched) {
                     card.classList.add('matched');
+                    if (!hasFlipped) {
+                        card.classList.add('flipped');
+                    }
                 }
                 
-                // Add flipped state (but don't remove it prematurely)
-                // Only add if server says flipped and card isn't already flipped
+                // Add flipped state if server says so and not matched
+                // Keep existing flipped state to prevent flickering
                 if (isFlipped && !hasFlipped && !isMatched) {
                     card.classList.add('flipped');
                 }

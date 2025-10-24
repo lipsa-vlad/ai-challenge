@@ -204,10 +204,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 if game['cards'][idx1] == game['cards'][idx2]:
                     game['matched'].extend(game['flipped'])
                     game['players'][self.channel_name]['score'] += 1
-                    game['flipped'] = []
-                    
-                    # Save to Redis
-                    await self.set_game(self.room_name, game)
                     
                     await self.channel_layer.group_send(
                         self.room_group_name,
@@ -215,6 +211,20 @@ class GameConsumer(AsyncWebsocketConsumer):
                             'type': 'match_found',
                             'indices': [idx1, idx2],
                             'player': game['players'][self.channel_name]['name']
+                        }
+                    )
+                    
+                    # Clear flipped after notifying
+                    game['flipped'] = []
+                    
+                    # Save to Redis
+                    await self.set_game(self.room_name, game)
+                    
+                    # Send updated state
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_update'
                         }
                     )
                 else:
@@ -228,7 +238,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                     
                     # Wait for client-side delay before clearing flipped cards
                     import asyncio
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(2.0)
                     
                     player_ids = list(game['players'].keys())
                     current_idx = player_ids.index(game['current_player'])
