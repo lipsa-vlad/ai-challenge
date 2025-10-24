@@ -118,16 +118,11 @@
                 }, 500);
             } else if (data.type === 'no_match') {
                 canFlip = false;
-                // Wait for server to update flipped array (2 seconds server delay)
+                // Server will send game_update after 2 seconds that clears flipped array
+                // Just wait and let the update handler do the work
                 setTimeout(() => {
-                    data.indices.forEach(idx => {
-                        const card = document.getElementById('game-board').children[idx];
-                        if (card && !card.classList.contains('matched')) {
-                            card.classList.remove('flipped');
-                        }
-                    });
                     canFlip = true;
-                }, 2000);
+                }, 2100);
             }
         };
         
@@ -208,19 +203,21 @@
                 
                 const isMatched = matchedSet.has(index);
                 const isFlipped = flippedSet.has(index);
+                const wasFlipped = card.classList.contains('flipped');
+                const wasMatched = card.classList.contains('matched');
                 
                 // Matched cards stay flipped permanently
-                if (isMatched) {
+                if (isMatched && !wasMatched) {
                     card.classList.add('matched');
                     card.classList.add('flipped');
                 }
                 // Currently flipped cards (but not matched yet)
-                else if (isFlipped) {
+                else if (isFlipped && !wasFlipped && !isMatched) {
                     card.classList.add('flipped');
                 }
-                // Cards that are not in any special state - only remove flipped if not matched
-                else if (!card.classList.contains('matched')) {
-                    // Don't remove here - let no_match handler control the timing
+                // Cards that should be unflipped (not in flipped array, not matched)
+                else if (!isFlipped && !isMatched && wasFlipped && !wasMatched) {
+                    card.classList.remove('flipped');
                 }
             });
         }
