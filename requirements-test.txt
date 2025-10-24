@@ -5,3 +5,5 @@ pytest-cov==4.1.0
 pytest-asyncio==0.21.1
 selenium==4.15.2
 coverage==7.3.2
+channels[daphne]==4.0.0
+asgiref==3.7.2
