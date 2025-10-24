@@ -118,6 +118,7 @@
                 }, 500);
             } else if (data.type === 'no_match') {
                 canFlip = false;
+                // Wait for server to update flipped array (2 seconds server delay)
                 setTimeout(() => {
                     data.indices.forEach(idx => {
                         const card = document.getElementById('game-board').children[idx];
@@ -126,7 +127,7 @@
                         }
                     });
                     canFlip = true;
-                }, 1600);
+                }, 2100);
             }
         };
         
@@ -213,16 +214,16 @@
                 // Add matched state - this is permanent
                 if (isMatched && !hasMatched) {
                     card.classList.add('matched');
-                    if (!hasFlipped) {
-                        card.classList.add('flipped');
-                    }
+                    card.classList.add('flipped');
                 }
                 
-                // Add flipped state if server says so and not matched
-                // Keep existing flipped state to prevent flickering
+                // Add flipped state if server says so and not already flipped
                 if (isFlipped && !hasFlipped && !isMatched) {
                     card.classList.add('flipped');
                 }
+                
+                // NEVER remove flipped class if card is matched or currently in flipped array
+                // Only let no_match handler remove flipped class for non-matches
             });
         }
         
