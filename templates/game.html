@@ -78,6 +78,22 @@
             document.getElementById('turn-indicator').className = 'turn-indicator';
         };
         
+        // Ensure clean disconnect when leaving page
+        window.addEventListener('beforeunload', () => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.close();
+            }
+        });
+        
+        // Handle visibility changes (tab switching, minimizing)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('Page hidden, keeping connection alive');
+            } else {
+                console.log('Page visible again');
+            }
+        });
+        
         socket.onmessage = (e) => {
             const data = JSON.parse(e.data);
             console.log('Received:', data);

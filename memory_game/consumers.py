@@ -102,49 +102,60 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
     
     async def disconnect(self, close_code):
+        logger.info(f"🔌 WebSocket disconnecting from room: {self.room_name}, channel: {self.channel_name}, close_code: {close_code}")
+        
         game = await self.get_game(self.room_name)
-        if game and self.channel_name in game['players']:
-            # Get player name before removing
-            player_name = game['players'][self.channel_name]['name']
-            
-            # Remove player immediately instead of marking as disconnected
-            del game['players'][self.channel_name]
-            logger.info(f"Player {player_name} removed from room {self.room_name}")
-            
-            # Update current player if needed
-            if game['current_player'] == self.channel_name:
-                connected_players = list(game['players'].keys())
-                game['current_player'] = connected_players[0] if connected_players else None
-            
-            # If no players left, clean up the game
-            if len(game['players']) == 0:
-                await self.delete_game(self.room_name)
-                logger.info(f"Room {self.room_name} cleaned up (no players)")
+        if game:
+            if self.channel_name in game['players']:
+                # Get player name before removing
+                player_name = game['players'][self.channel_name]['name']
+                
+                # Remove player immediately instead of marking as disconnected
+                del game['players'][self.channel_name]
+                logger.info(f"👋 Player {player_name} (channel: {self.channel_name}) removed from room {self.room_name}")
+                logger.info(f"📊 Remaining players in room {self.room_name}: {len(game['players'])}")
+                
+                # Update current player if needed
+                if game['current_player'] == self.channel_name:
+                    connected_players = list(game['players'].keys())
+                    game['current_player'] = connected_players[0] if connected_players else None
+                    logger.info(f"🔄 Current player updated to: {game['current_player']}")
+                
+                # If no players left, clean up the game
+                if len(game['players']) == 0:
+                    await self.delete_game(self.room_name)
+                    logger.info(f"🧹 Room {self.room_name} cleaned up (no players remaining)")
+                else:
+                    # Save updated game state
+                    await self.set_game(self.room_name, game)
+                    logger.info(f"💾 Game state saved for room {self.room_name}")
+                    
+                    # Notify about player leaving
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'player_left',
+                            'player_name': player_name
+                        }
+                    )
+                    
+                    # Broadcast update to all remaining players
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_update'
+                        }
+                    )
             else:
-                # Save updated game state
-                await self.set_game(self.room_name, game)
-                
-                # Notify about player leaving
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        'type': 'player_left',
-                        'player_name': player_name
-                    }
-                )
-                
-                # Broadcast update to all remaining players
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        'type': 'game_update'
-                    }
-                )
+                logger.warning(f"⚠️ Channel {self.channel_name} not found in game players for room {self.room_name}")
+        else:
+            logger.warning(f"⚠️ No game found for room {self.room_name} during disconnect")
         
         await self.channel_layer.group_discard(
             self.room_group_name,
             self.channel_name
         )
+        logger.info(f"✅ Cleanup complete for channel {self.channel_name}")
     
     async def receive(self, text_data):
         data = json.loads(text_data)
