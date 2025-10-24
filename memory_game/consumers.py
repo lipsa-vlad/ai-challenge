@@ -1,12 +1,38 @@
 import json
 import logging
+import redis.asyncio as redis
 from channels.generic.websocket import AsyncWebsocketConsumer
 from app import get_cards
 
 logger = logging.getLogger(__name__)
 
 class GameConsumer(AsyncWebsocketConsumer):
-    games = {}
+    redis_client = None
+    
+    @classmethod
+    async def get_redis(cls):
+        """Get or create Redis connection"""
+        if cls.redis_client is None:
+            cls.redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
+        return cls.redis_client
+    
+    async def get_game(self, room_name):
+        """Get game state from Redis"""
+        r = await self.get_redis()
+        data = await r.get(f'game:{room_name}')
+        if data:
+            return json.loads(data)
+        return None
+    
+    async def set_game(self, room_name, game_state):
+        """Save game state to Redis"""
+        r = await self.get_redis()
+        await r.set(f'game:{room_name}', json.dumps(game_state))
+    
+    async def delete_game(self, room_name):
+        """Delete game from Redis"""
+        r = await self.get_redis()
+        await r.delete(f'game:{room_name}')
     
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
@@ -22,8 +48,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.accept()
         logger.info(f"✅ WebSocket accepted for room: {self.room_name}, channel: {self.channel_name}")
         
-        if self.room_name not in self.games:
-            self.games[self.room_name] = {
+        # Get or create game from Redis
+        game = await self.get_game(self.room_name)
+        if game is None:
+            game = {
                 'players': {},
                 'cards': [],
                 'flipped': [],
@@ -32,8 +60,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'theme': 'emoji',
                 'started': False
             }
-        
-        game = self.games[self.room_name]
         
         # Clean up disconnected players before adding new one
         disconnected_players = [pid for pid, p in game['players'].items() if not p['connected']]
@@ -53,7 +79,20 @@ class GameConsumer(AsyncWebsocketConsumer):
         if game['current_player'] is None or game['current_player'] not in game['players']:
             game['current_player'] = player_id
         
+        # Save to Redis
+        await self.set_game(self.room_name, game)
+        
+        player_name = game['players'][player_id]['name']
         logger.info(f"👥 Room {self.room_name} now has {len(game['players'])} players: {[p['name'] for p in game['players'].values()]}")
+        
+        # Notify all players about new player
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'player_joined',
+                'player_name': player_name
+            }
+        )
         
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -63,30 +102,44 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
     
     async def disconnect(self, close_code):
-        if self.room_name in self.games:
-            game = self.games[self.room_name]
-            if self.channel_name in game['players']:
-                # Remove player immediately instead of marking as disconnected
-                del game['players'][self.channel_name]
-                logger.info(f"Player {self.channel_name} removed from room {self.room_name}")
+        game = await self.get_game(self.room_name)
+        if game and self.channel_name in game['players']:
+            # Get player name before removing
+            player_name = game['players'][self.channel_name]['name']
+            
+            # Remove player immediately instead of marking as disconnected
+            del game['players'][self.channel_name]
+            logger.info(f"Player {player_name} removed from room {self.room_name}")
+            
+            # Update current player if needed
+            if game['current_player'] == self.channel_name:
+                connected_players = list(game['players'].keys())
+                game['current_player'] = connected_players[0] if connected_players else None
+            
+            # If no players left, clean up the game
+            if len(game['players']) == 0:
+                await self.delete_game(self.room_name)
+                logger.info(f"Room {self.room_name} cleaned up (no players)")
+            else:
+                # Save updated game state
+                await self.set_game(self.room_name, game)
                 
-                # Update current player if needed
-                if game['current_player'] == self.channel_name:
-                    connected_players = list(game['players'].keys())
-                    game['current_player'] = connected_players[0] if connected_players else None
+                # Notify about player leaving
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'player_left',
+                        'player_name': player_name
+                    }
+                )
                 
-                # If no players left, clean up the game
-                if len(game['players']) == 0:
-                    del self.games[self.room_name]
-                    logger.info(f"Room {self.room_name} cleaned up (no players)")
-                else:
-                    # Broadcast update to all remaining players
-                    await self.channel_layer.group_send(
-                        self.room_group_name,
-                        {
-                            'type': 'game_update'
-                        }
-                    )
+                # Broadcast update to all remaining players
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'game_update'
+                    }
+                )
         
         await self.channel_layer.group_discard(
             self.room_group_name,
@@ -96,7 +149,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         data = json.loads(text_data)
         action = data.get('action')
-        game = self.games.get(self.room_name)
+        game = await self.get_game(self.room_name)
         
         if not game:
             return
@@ -111,6 +164,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             
             for player in game['players'].values():
                 player['score'] = 0
+            
+            # Save to Redis
+            await self.set_game(self.room_name, game)
             
             # Broadcast game state to all players
             await self.channel_layer.group_send(
@@ -130,6 +186,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             
             game['flipped'].append(index)
             
+            # Save to Redis
+            await self.set_game(self.room_name, game)
+            
             # Broadcast the flip immediately to all players
             await self.channel_layer.group_send(
                 self.room_group_name,
@@ -146,6 +205,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                     game['matched'].extend(game['flipped'])
                     game['players'][self.channel_name]['score'] += 1
                     game['flipped'] = []
+                    
+                    # Save to Redis
+                    await self.set_game(self.room_name, game)
                     
                     await self.channel_layer.group_send(
                         self.room_group_name,
@@ -172,6 +234,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                     current_idx = player_ids.index(game['current_player'])
                     game['current_player'] = player_ids[(current_idx + 1) % len(player_ids)]
                     game['flipped'] = []
+                    
+                    # Save to Redis
+                    await self.set_game(self.room_name, game)
                 
                     await self.channel_layer.group_send(
                         self.room_group_name,
@@ -182,7 +247,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     
     async def game_update(self, event):
         """Send game update with personalized is_you and is_your_turn flags"""
-        game = self.games.get(self.room_name)
+        game = await self.get_game(self.room_name)
         if game:
             # Serialize with this player's perspective
             personalized_game = self.serialize_game(game, self.channel_name)
@@ -191,11 +256,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'game': personalized_game
             }))
         else:
-            # Fallback to generic game state
-            await self.send(text_data=json.dumps({
-                'type': 'game_update',
-                'game': event['game']
-            }))
+            logger.warning(f"No game found in Redis for room {self.room_name}")
     
     async def match_found(self, event):
         await self.send(text_data=json.dumps({
@@ -208,6 +269,18 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'no_match',
             'indices': event['indices']
+        }))
+    
+    async def player_joined(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'player_joined',
+            'player_name': event['player_name']
+        }))
+    
+    async def player_left(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'player_left',
+            'player_name': event['player_name']
         }))
     
     def serialize_game(self, game, current_player_id=None):

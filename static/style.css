@@ -591,3 +591,47 @@ h3 {
         align-items: flex-start;
     }
 }
+
+/* Notifications */
+.notifications {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 350px;
+}
+
+.notification {
+    background: white;
+    padding: 16px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateX(400px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    border-left: 4px solid #0366d6;
+}
+
+.notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.notification.success {
+    border-left-color: #28a745;
+    background: #f1f8f4;
+}
+
+.notification.info {
+    border-left-color: #0366d6;
+    background: #f1f8ff;
+}
+
+.notification.warning {
+    border-left-color: #ffd33d;
+    background: #fffbdd;
+}

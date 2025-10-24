@@ -31,6 +31,8 @@
         
         <div class="turn-indicator" id="turn-indicator"></div>
         
+        <div id="notifications" class="notifications"></div>
+        
         <div class="game-board" id="game-board"></div>
         
         <div id="win-modal" class="modal hidden">
@@ -81,6 +83,10 @@
                 gameState = data.game;
                 console.log('Game state:', gameState);
                 updateUI();
+            } else if (data.type === 'player_joined') {
+                showNotification(`🎮 ${data.player_name} joined the game!`, 'success');
+            } else if (data.type === 'player_left') {
+                showNotification(`👋 ${data.player_name} left the game`, 'info');
             } else if (data.type === 'match_found') {
                 setTimeout(() => {
                     data.indices.forEach(idx => {
@@ -228,6 +234,23 @@
             document.getElementById('game-board').innerHTML = '';
             document.getElementById('start-btn').disabled = false;
         });
+        
+        function showNotification(message, type = 'info') {
+            const notifContainer = document.getElementById('notifications');
+            const notif = document.createElement('div');
+            notif.className = `notification ${type}`;
+            notif.textContent = message;
+            notifContainer.appendChild(notif);
+            
+            // Animate in
+            setTimeout(() => notif.classList.add('show'), 10);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notif.classList.remove('show');
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
+        }
     </script>
 </body>
 </html>
