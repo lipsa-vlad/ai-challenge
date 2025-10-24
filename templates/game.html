@@ -26,6 +26,7 @@
                 <option value="animals">🦙 Weird Animals</option>
                 <option value="food">🍕 Junk Food</option>
                 <option value="faces">🤪 Crazy Faces</option>
+                <option value="chuck">💪 Chuck Norris Jokes</option>
                 <option value="starwars">⭐ Star Wars</option>
                 <option value="pokemon">⚡ Pokemon</option>
             </select>
@@ -165,7 +166,7 @@
                     
                     // Show emojis directly, text themes in styled cards
                     const isEmojiTheme = ['emoji', 'animals', 'food', 'faces'].includes(gameState.theme);
-                    const displayContent = isEmojiTheme ? item : `<div class="text-card">${item}</div>`;
+                    const displayContent = isEmojiTheme ? item : `<div class="text-card ${gameState.theme === 'chuck' ? 'chuck-joke' : ''}">${item}</div>`;
                     
                     // Random funny back icons
                     const backIcons = ['🤔', '🧐', '😏', '🤨', '🤫'];

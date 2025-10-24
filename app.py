@@ -7,8 +7,11 @@ THEMES = {
     'food': ['🌮', '🍔', '🍟', '🍕', '🌭', '🧇', '🥓', '🍩'],
     'faces': ['🤪', '🥴', '😵', '🤯', '🥳', '🤠', '🤑', '😎'],
     'starwars': [],
-    'pokemon': []
+    'pokemon': [],
+    'chuck': []
 }
+
+CHUCK_JOKES_CACHE = []
 
 def fetch_starwars_characters():
     """Fetch character names from SWAPI"""
@@ -35,6 +38,34 @@ def fetch_pokemon():
         pass
     return ['Pikachu', 'Charizard', 'Bulbasaur', 'Squirtle', 'Jigglypuff', 'Meowth', 'Psyduck', 'Snorlax']
 
+def fetch_chuck_jokes():
+    """Fetch Chuck Norris jokes from API"""
+    global CHUCK_JOKES_CACHE
+    try:
+        jokes = []
+        for _ in range(8):
+            response = requests.get('https://api.chucknorris.io/jokes/random', timeout=3)
+            if response.status_code == 200:
+                joke = response.json()['value']
+                jokes.append(joke[:80] + '...' if len(joke) > 80 else joke)
+        if len(jokes) == 8:
+            CHUCK_JOKES_CACHE = jokes
+            return jokes
+    except:
+        pass
+    
+    # Fallback jokes if API fails
+    return [
+        "Chuck Norris counted to infinity. Twice.",
+        "Chuck Norris can divide by zero.",
+        "Chuck Norris can slam a revolving door.",
+        "Chuck Norris can kill two stones with one bird.",
+        "Chuck Norris can unscramble an egg.",
+        "Chuck Norris can hear sign language.",
+        "Chuck Norris can speak braille.",
+        "Chuck Norris threw a grenade and killed 50 people. Then it exploded."
+    ]
+
 def get_cards(theme):
     """Get cards for the specified theme"""
     if theme == 'starwars':
@@ -45,6 +76,10 @@ def get_cards(theme):
         if not THEMES['pokemon']:
             THEMES['pokemon'] = fetch_pokemon()
         items = THEMES['pokemon']
+    elif theme == 'chuck':
+        if not THEMES['chuck']:
+            THEMES['chuck'] = fetch_chuck_jokes()
+        items = THEMES['chuck']
     elif theme in THEMES:
         items = THEMES[theme]
     else:
