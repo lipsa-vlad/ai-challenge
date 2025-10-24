@@ -96,7 +96,7 @@
                         if (card) card.classList.remove('flipped');
                     });
                     canFlip = true;
-                }, 1500);
+                }, 800);
             }
         };
         
@@ -141,8 +141,9 @@
         function renderBoard() {
             const board = document.getElementById('game-board');
             
-            // Only create cards once
+            // Only create cards once - use fragment for better performance
             if (board.children.length === 0) {
+                const fragment = document.createDocumentFragment();
                 gameState.cards.forEach((item, index) => {
                     const card = document.createElement('div');
                     card.className = 'card';
@@ -154,23 +155,31 @@
                         <span class="back">❓</span>
                         <span class="front">${displayContent}</span>
                     `;
-                    card.addEventListener('click', () => flipCard(index));
-                    board.appendChild(card);
+                    card.addEventListener('click', () => flipCard(index), { passive: true });
+                    fragment.appendChild(card);
                 });
+                board.appendChild(fragment);
             }
             
-            // Update card states
+            // Update card states efficiently - only change what's needed
+            const matchedSet = new Set(gameState.matched);
+            const flippedSet = new Set(gameState.flipped);
+            
             gameState.cards.forEach((item, index) => {
-                const card = document.querySelector(`[data-index="${index}"]`);
+                const card = board.children[index];
                 if (!card) return;
                 
-                // Update classes based on game state
-                card.className = 'card';
-                if (gameState.matched.includes(index)) {
-                    card.classList.add('matched');
+                const isMatched = matchedSet.has(index);
+                const isFlipped = flippedSet.has(index);
+                const hasMatched = card.classList.contains('matched');
+                const hasFlipped = card.classList.contains('flipped');
+                
+                // Only update DOM if state changed
+                if (isMatched !== hasMatched) {
+                    card.classList.toggle('matched', isMatched);
                 }
-                if (gameState.flipped.includes(index)) {
-                    card.classList.add('flipped');
+                if (isFlipped !== hasFlipped && !isMatched) {
+                    card.classList.toggle('flipped', isFlipped);
                 }
             });
         }
@@ -178,10 +187,13 @@
         function flipCard(index) {
             if (!canFlip || !gameState.is_your_turn || !gameState.started) return;
             
-            const card = document.querySelector(`[data-index="${index}"]`);
-            if (card.classList.contains('flipped') || card.classList.contains('matched')) return;
+            const card = document.getElementById('game-board').children[index];
+            if (!card || card.classList.contains('flipped') || card.classList.contains('matched')) return;
             
+            // Immediate visual feedback
             card.classList.add('flipped');
+            
+            // Send to server
             socket.send(JSON.stringify({
                 action: 'flip_card',
                 index: index
