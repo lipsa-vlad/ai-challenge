@@ -1,6 +1,9 @@
 import json
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from app import get_cards
+
+logger = logging.getLogger(__name__)
 
 class GameConsumer(AsyncWebsocketConsumer):
     games = {}
@@ -9,7 +12,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         self.room_group_name = f'game_{self.room_name}'
         
-        print(f"WebSocket connecting to room: {self.room_name}")
+        logger.info(f"WebSocket connecting to room: {self.room_name}")
         
         await self.channel_layer.group_add(
             self.room_group_name,
@@ -17,7 +20,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
         
         await self.accept()
-        print(f"WebSocket accepted for room: {self.room_name}")
+        logger.info(f"✅ WebSocket accepted for room: {self.room_name}, channel: {self.channel_name}")
         
         if self.room_name not in self.games:
             self.games[self.room_name] = {
@@ -36,7 +39,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         disconnected_players = [pid for pid, p in game['players'].items() if not p['connected']]
         for pid in disconnected_players:
             del game['players'][pid]
-            print(f"Removed disconnected player: {pid}")
+            logger.info(f"Removed disconnected player: {pid}")
         
         # Reassign player numbers after cleanup
         player_id = self.channel_name
@@ -50,11 +53,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         if game['current_player'] is None or game['current_player'] not in game['players']:
             game['current_player'] = player_id
         
+        logger.info(f"👥 Room {self.room_name} now has {len(game['players'])} players: {[p['name'] for p in game['players'].values()]}")
+        
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                'type': 'game_update',
-                'game': self.serialize_game(game, player_id)
+                'type': 'game_update'
             }
         )
     
@@ -64,27 +68,25 @@ class GameConsumer(AsyncWebsocketConsumer):
             if self.channel_name in game['players']:
                 # Remove player immediately instead of marking as disconnected
                 del game['players'][self.channel_name]
-                print(f"Player {self.channel_name} removed from room {self.room_name}")
+                logger.info(f"Player {self.channel_name} removed from room {self.room_name}")
                 
                 # Update current player if needed
                 if game['current_player'] == self.channel_name:
-                    connected_players = [p for p in game['players'].keys() if game['players'][p]['connected']]
+                    connected_players = list(game['players'].keys())
                     game['current_player'] = connected_players[0] if connected_players else None
                 
                 # If no players left, clean up the game
                 if len(game['players']) == 0:
                     del self.games[self.room_name]
-                    print(f"Room {self.room_name} cleaned up (no players)")
+                    logger.info(f"Room {self.room_name} cleaned up (no players)")
                 else:
-                    # Notify remaining players
-                    for player_id in game['players'].keys():
-                        await self.channel_layer.send(
-                            player_id,
-                            {
-                                'type': 'game_update',
-                                'game': self.serialize_game(game, player_id)
-                            }
-                        )
+                    # Broadcast update to all remaining players
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_update'
+                        }
+                    )
         
         await self.channel_layer.group_discard(
             self.room_group_name,
@@ -110,15 +112,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             for player in game['players'].values():
                 player['score'] = 0
             
-            # Send game state to each player with their perspective
-            for player_id in game['players'].keys():
-                await self.channel_layer.send(
-                    player_id,
-                    {
-                        'type': 'game_update',
-                        'game': self.serialize_game(game, player_id)
-                    }
-                )
+            # Broadcast game state to all players
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'game_update'
+                }
+            )
         
         elif action == 'flip_card':
             if game['current_player'] != self.channel_name:
@@ -131,14 +131,12 @@ class GameConsumer(AsyncWebsocketConsumer):
             game['flipped'].append(index)
             
             # Broadcast the flip immediately to all players
-            for player_id in game['players'].keys():
-                await self.channel_layer.send(
-                    player_id,
-                    {
-                        'type': 'game_update',
-                        'game': self.serialize_game(game, player_id)
-                    }
-                )
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'game_update'
+                }
+            )
             
             # Check for match if two cards are flipped
             if len(game['flipped']) == 2:
@@ -170,25 +168,34 @@ class GameConsumer(AsyncWebsocketConsumer):
                     import asyncio
                     await asyncio.sleep(1.5)
                     
-                    player_ids = [p for p in game['players'].keys() if game['players'][p]['connected']]
+                    player_ids = list(game['players'].keys())
                     current_idx = player_ids.index(game['current_player'])
                     game['current_player'] = player_ids[(current_idx + 1) % len(player_ids)]
                     game['flipped'] = []
                 
-                    for player_id in game['players'].keys():
-                        await self.channel_layer.send(
-                            player_id,
-                            {
-                                'type': 'game_update',
-                                'game': self.serialize_game(game, player_id)
-                            }
-                        )
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_update'
+                        }
+                    )
     
     async def game_update(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'game_update',
-            'game': event['game']
-        }))
+        """Send game update with personalized is_you and is_your_turn flags"""
+        game = self.games.get(self.room_name)
+        if game:
+            # Serialize with this player's perspective
+            personalized_game = self.serialize_game(game, self.channel_name)
+            await self.send(text_data=json.dumps({
+                'type': 'game_update',
+                'game': personalized_game
+            }))
+        else:
+            # Fallback to generic game state
+            await self.send(text_data=json.dumps({
+                'type': 'game_update',
+                'game': event['game']
+            }))
     
     async def match_found(self, event):
         await self.send(text_data=json.dumps({
@@ -203,7 +210,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             'indices': event['indices']
         }))
     
-    def serialize_game(self, game, current_player_id):
+    def serialize_game(self, game, current_player_id=None):
+        """Serialize game state. If current_player_id is None, don't set is_you flags."""
         return {
             'players': [
                 {
@@ -212,15 +220,15 @@ class GameConsumer(AsyncWebsocketConsumer):
                     'score': p['score'],
                     'connected': p['connected'],
                     'is_current': game['current_player'] == pid,
-                    'is_you': pid == current_player_id
+                    'is_you': pid == current_player_id if current_player_id else False
                 }
                 for pid, p in game['players'].items()
             ],
             'cards': game['cards'] if game['started'] else [],
             'matched': game['matched'],
             'flipped': game['flipped'],
-            'current_player': game['players'][game['current_player']]['name'] if game['current_player'] else None,
+            'current_player': game['players'][game['current_player']]['name'] if game['current_player'] and game['current_player'] in game['players'] else 'Player 1',
             'theme': game['theme'],
             'started': game['started'],
-            'is_your_turn': game['current_player'] == current_player_id
+            'is_your_turn': game['current_player'] == current_player_id if current_player_id else False
         }
