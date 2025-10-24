@@ -31,6 +31,12 @@ def list_rooms(request):
             if game_data_str:
                 game_data = json.loads(game_data_str)
                 player_count = len(game_data.get('players', {}))
+                
+                # Clean up empty rooms
+                if player_count == 0:
+                    r.delete(key)
+                    continue
+                    
                 rooms.append({
                     'name': room_name,
                     'players': player_count,

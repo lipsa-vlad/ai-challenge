@@ -37,6 +37,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope['url_route']['kwargs']['room_name']
         self.room_group_name = f'game_{self.room_name}'
+        self.player_id = self.channel_name
         
         logger.info(f"WebSocket connecting to room: {self.room_name}")
         
@@ -61,31 +62,31 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'started': False
             }
         
-        # Clean up disconnected players before adding new one
-        disconnected_players = [pid for pid, p in game['players'].items() if not p['connected']]
-        for pid in disconnected_players:
-            del game['players'][pid]
-            logger.info(f"Removed disconnected player: {pid}")
-        
-        # Reassign player numbers after cleanup
-        player_id = self.channel_name
-        player_number = len(game['players']) + 1
-        game['players'][player_id] = {
-            'name': f'Player {player_number}',
-            'score': 0,
-            'connected': True
-        }
+        # Only add player if not already in the game (prevent duplicates on reconnect)
+        if self.player_id not in game['players']:
+            # Reassign player numbers based on current count
+            player_number = len(game['players']) + 1
+            game['players'][self.player_id] = {
+                'name': f'Player {player_number}',
+                'score': 0,
+                'connected': True
+            }
+            logger.info(f"➕ Added new player: Player {player_number} (channel: {self.player_id})")
+        else:
+            # Mark existing player as connected (reconnection)
+            game['players'][self.player_id]['connected'] = True
+            logger.info(f"🔄 Reconnected player: {game['players'][self.player_id]['name']} (channel: {self.player_id})")
         
         if game['current_player'] is None or game['current_player'] not in game['players']:
-            game['current_player'] = player_id
+            game['current_player'] = self.player_id
         
         # Save to Redis
         await self.set_game(self.room_name, game)
         
-        player_name = game['players'][player_id]['name']
+        player_name = game['players'][self.player_id]['name']
         logger.info(f"👥 Room {self.room_name} now has {len(game['players'])} players: {[p['name'] for p in game['players'].values()]}")
         
-        # Notify all players about new player
+        # Notify all players about player joined/reconnected
         await self.channel_layer.group_send(
             self.room_group_name,
             {
@@ -104,27 +105,30 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         logger.info(f"🔌 WebSocket disconnecting from room: {self.room_name}, channel: {self.channel_name}, close_code: {close_code}")
         
+        # Ensure we have player_id set (fallback to channel_name for backwards compatibility)
+        player_id = getattr(self, 'player_id', self.channel_name)
+        
         game = await self.get_game(self.room_name)
         if game:
-            if self.channel_name in game['players']:
+            if player_id in game['players']:
                 # Get player name before removing
-                player_name = game['players'][self.channel_name]['name']
+                player_name = game['players'][player_id]['name']
                 
-                # Remove player immediately instead of marking as disconnected
-                del game['players'][self.channel_name]
-                logger.info(f"👋 Player {player_name} (channel: {self.channel_name}) removed from room {self.room_name}")
+                # Remove player immediately
+                del game['players'][player_id]
+                logger.info(f"👋 Player {player_name} (channel: {player_id}) removed from room {self.room_name}")
                 logger.info(f"📊 Remaining players in room {self.room_name}: {len(game['players'])}")
                 
                 # Update current player if needed
-                if game['current_player'] == self.channel_name:
+                if game['current_player'] == player_id:
                     connected_players = list(game['players'].keys())
                     game['current_player'] = connected_players[0] if connected_players else None
                     logger.info(f"🔄 Current player updated to: {game['current_player']}")
                 
-                # If no players left, clean up the game
+                # If no players left, delete the game from Redis completely
                 if len(game['players']) == 0:
                     await self.delete_game(self.room_name)
-                    logger.info(f"🧹 Room {self.room_name} cleaned up (no players remaining)")
+                    logger.info(f"🧹 Room {self.room_name} deleted from Redis (no players remaining)")
                 else:
                     # Save updated game state
                     await self.set_game(self.room_name, game)
@@ -147,7 +151,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                         }
                     )
             else:
-                logger.warning(f"⚠️ Channel {self.channel_name} not found in game players for room {self.room_name}")
+                logger.warning(f"⚠️ Channel {player_id} not found in game players for room {self.room_name}")
         else:
             logger.warning(f"⚠️ No game found for room {self.room_name} during disconnect")
         
